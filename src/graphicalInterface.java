@@ -6,6 +6,11 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintStream;
+
 import javax.swing.event.*;
 
 
@@ -13,12 +18,16 @@ public class graphicalInterface extends JFrame{
 	private static final long serialVersionUID = 1L;
 	//File selection parameters
 	public static JFrame Frame;
+	public static JFrame Frame2;
 	public static JPanel content;
 	public static Container cp;
 	public static JButton runButton;
 	public static JButton openTreatmentButton;
+	public static String treatmentFile;
 	public static JButton openControlButton;
+	public static String controlFile;
 	public static JButton openOutputDirButton;
+	public static String outputLocation;
 	public static JTextField TreatmentFileName;
 	public static JTextField ControlFileName;
 	public static JTextField outputDirectory;
@@ -67,6 +76,10 @@ public class graphicalInterface extends JFrame{
 	public static JLabel TSSLabel;
 	public static JTextField TSS;
 	
+	//OutputInfo
+	public static JLabel outputLabel;
+	public static JTextArea outputInfo;
+	
 	
 	
 	public graphicalInterface(){
@@ -80,32 +93,22 @@ public class graphicalInterface extends JFrame{
 		TreatmentFileName.setEditable(false);
 		ControlFileName = new JTextField("Control .fastq:");
 		ControlFileName.setEditable(false);
-		outputDirectory = new JTextField("Output Directory");
+		outputDirectory = new JTextField("Output Directory:");
 		outputDirectory.setEditable(false);
 		runName = new JLabel("File Tag:");
 		callName = new JTextField();
 		
 		content = new JPanel();
-		openTreatmentButton = new JButton("Select a Treatment File");
-		openControlButton = new JButton("Select a Control File");
+		openTreatmentButton = new JButton("Select a treatment File");
+		openControlButton = new JButton("Select a control File");
 		openOutputDirButton = new JButton("Select an output directory");
 		
 		openTreatmentButton.addActionListener(new OpenTreatment());
 		openControlButton.addActionListener(new OpenControl());
 		openOutputDirButton.addActionListener(new OpenOutput());
 		
-		content = new JPanel();
-		content.setLayout(new GridLayout(4,2));
-		content.add(TreatmentFileName);
-		content.add(openTreatmentButton);
-		content.add(ControlFileName);
-		content.add(openControlButton);
-		content.add(outputDirectory);
-		content.add(openOutputDirButton);
-		content.add(runName);
-		content.add(callName);
-		content.setBorder(BorderFactory.createLineBorder(Color.black));		
-		cp.add(content);
+		//Directory Panel
+		setUpDirectory();
 		
 		//Alignment Panel
 		setUpAlignmentParameters();
@@ -119,6 +122,21 @@ public class graphicalInterface extends JFrame{
 		Frame.add(cp);
 		Frame.pack();
 		Frame.setVisible(true);
+	}
+	
+	public static void setUpDirectory(){
+		content = new JPanel();
+		content.setLayout(new GridLayout(4,2));
+		content.add(TreatmentFileName);
+		content.add(openTreatmentButton);
+		content.add(ControlFileName);
+		content.add(openControlButton);
+		content.add(outputDirectory);
+		content.add(openOutputDirButton);
+		content.add(runName);
+		content.add(callName);
+		content.setBorder(BorderFactory.createLineBorder(Color.black));		
+		cp.add(content);
 	}
 	
 	public static void setUpAlignmentParameters(){
@@ -411,8 +429,6 @@ public class graphicalInterface extends JFrame{
 		      public void stateChanged(ChangeEvent changEvent) {
 		        AbstractButton aButton = (AbstractButton)changEvent.getSource();
 		        ButtonModel aModel = aButton.getModel();
-		        boolean armed = aModel.isArmed();
-		        boolean pressed = aModel.isPressed();
 		        boolean selected = aModel.isSelected();
 		        if(selected){
 		        	keepDupNumDuplicates.setEnabled(true);
@@ -444,7 +460,21 @@ public class graphicalInterface extends JFrame{
 		StitchDistance = new JTextField("12500");
 		TSS = new JTextField("2000");
 		runButton = new JButton("RUN");
-		
+		ActionListener runCommander = new ActionListener() {
+	    	public void actionPerformed(ActionEvent e){
+	    		try {
+					runCommand();
+				} catch (IOException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				} catch (InterruptedException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
+	    	}
+	    };
+	    runButton.addActionListener(runCommander);
+	    
 		content = new JPanel();
 		GroupLayout RoseLayout = new GroupLayout(content);
 		content.setLayout(RoseLayout);
@@ -489,6 +519,7 @@ public class graphicalInterface extends JFrame{
     	    c.setAcceptAllFileFilterUsed(false);
     		int rVal = c.showOpenDialog(Frame);
     		if (rVal == JFileChooser.APPROVE_OPTION){
+    			outputLocation = c.getCurrentDirectory().toString();
     			outputDirectory.setText("Output Folder: " + c.getCurrentDirectory().toString());
     		}
     		if (rVal == JFileChooser.CANCEL_OPTION) {
@@ -504,6 +535,7 @@ public class graphicalInterface extends JFrame{
     		JFileChooser c = new JFileChooser();
     		int rVal = c.showOpenDialog(Frame);
     		if (rVal == JFileChooser.APPROVE_OPTION){
+    			treatmentFile = c.getSelectedFile().toString();
     			TreatmentFileName.setText("FastQ File: " + c.getSelectedFile().toString());
     		}
     		if (rVal == JFileChooser.CANCEL_OPTION) {
@@ -519,6 +551,7 @@ public class graphicalInterface extends JFrame{
     		JFileChooser c = new JFileChooser();
     		int rVal = c.showOpenDialog(Frame);
     		if (rVal == JFileChooser.APPROVE_OPTION){
+    			controlFile = c.getSelectedFile().toString();
     			ControlFileName.setText("FastQ File: " + c.getSelectedFile().toString());
     		}
     		if (rVal == JFileChooser.CANCEL_OPTION) {
@@ -529,10 +562,100 @@ public class graphicalInterface extends JFrame{
     	
     }
 	
-	public static void main(String[] args) {
+    public static void runCommand() throws java.io.IOException, InterruptedException{
+    	cp = new JPanel();
+    	outputLabel = new JLabel("Output");
+    	outputLabel.setSize(new Dimension(outputLabel.getWidth()+5,outputLabel.getHeight()+5));
+    	outputInfo = new JTextArea(80,40);
+    	outputInfo.setEditable(false);
+    	outputInfo.setText(TreatmentFileName.getText()+"\n"+ControlFileName.getText()+"\n" + outputDirectory.getText() + "\n" + callName.getText());
+    	
+    	cp.add(outputInfo);
+    	content = new JPanel();
+    	GroupLayout outputLayout = new GroupLayout(content);
+		content.setLayout(outputLayout);
+		outputLayout.setAutoCreateGaps(true);
+		outputLayout.setAutoCreateContainerGaps(true);
+    	
+		outputLayout.setHorizontalGroup(outputLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
+				.addComponent(outputLabel)
+				.addComponent(outputInfo)
+		);
+		
+		outputLayout.setVerticalGroup(outputLayout.createSequentialGroup()
+				.addComponent(outputLabel)
+				.addComponent(outputInfo)
+		);
+		int numberOfProcessors = 0;
+		java.lang.Runtime rt = java.lang.Runtime.getRuntime();
+	    java.lang.Process p = rt.exec("nproc");
+	    p.waitFor();
+	    java.io.InputStream is = p.getInputStream();
+	    java.io.BufferedReader reader = new java.io.BufferedReader(new InputStreamReader(is));
+	    String s = null;
+	    while ((s = reader.readLine()) != null) {
+	           numberOfProcessors = Integer.valueOf(s);
+	           outputInfo.append("\nThere are " + s + " processors available in this machine.\n");
+	    }
+	    is.close();
+		 
+		String alignmentCommand = "bowtie2 -p " + Integer.toString(numberOfProcessors - 1) + " ";
+		boolean isAlignmentDefault = alignmentSettingsDefault.isSelected();
+			if(!isAlignmentDefault){
+				boolean isAlignmentPreset = alignmentSettingsPresets.isSelected();
+				if(isAlignmentPreset){
+					if(local.isSelected()){
+						alignmentCommand = alignmentCommand + "--local ";
+					}
+					if(verySensitive.isSelected()){
+						alignmentCommand = alignmentCommand + "--very-sensitive ";
+					}
+					else if(sensitive.isSelected()){
+						alignmentCommand = alignmentCommand + "--sensitive ";
+					}
+					else if(veryFast.isSelected()){
+						alignmentCommand = alignmentCommand + "--very-fast ";
+					}
+					else if(fast.isSelected()){
+						alignmentCommand = alignmentCommand + "--fast ";
+					}
+				}
+				else {
+					alignmentCommand = alignmentCommand + alignmentParameters.getText();
+				}
+			}
+			else {
+				alignmentCommand = alignmentCommand + "--local --very-sensitive";
+			}
+			 	
+		
+		outputInfo.append(alignmentCommand);
+		/*
+		java.lang.Runtime rt = java.lang.Runtime.getRuntime();
+	    java.lang.Process p = rt.exec("cat " + controlFile);
+	    p.waitFor();
+	    java.io.InputStream is = p.getInputStream();
+	    java.io.BufferedReader reader = new java.io.BufferedReader(new InputStreamReader(is));
+	    String s = null;
+	    while ((s = reader.readLine()) != null) {
+	           outputInfo.append("\n"+s);
+	    }
+	    is.close();
+		*/
+		cp.add(content);
+	
+    	Frame2 = new JFrame();
+    	Frame2.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    	Frame2.add(cp);
+		Frame2.pack();
+		Frame2.setVisible(true);
+    	
+    }
+   
+    
+public static void main(String[] args) {
 		JOptionPane.showMessageDialog(Frame,"Welcome to Read Alignment Peak and Super Enhancer Calling!","RAPaSEC",JOptionPane.INFORMATION_MESSAGE);
 		graphicalInterface mine = new graphicalInterface();
-		
 	}
 
 }
