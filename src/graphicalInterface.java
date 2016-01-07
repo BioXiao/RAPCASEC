@@ -6,10 +6,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintStream;
+
+import java.io.*;
 
 import javax.swing.event.*;
 
@@ -566,7 +564,7 @@ public class graphicalInterface extends JFrame{
     	cp = new JPanel();
     	outputLabel = new JLabel("Output");
     	outputLabel.setSize(new Dimension(outputLabel.getWidth()+5,outputLabel.getHeight()+5));
-    	outputInfo = new JTextArea(80,40);
+    	outputInfo = new JTextArea(100,40);
     	outputInfo.setEditable(false);
     	outputInfo.setText(TreatmentFileName.getText()+"\n"+ControlFileName.getText()+"\n" + outputDirectory.getText() + "\n" + callName.getText());
     	
@@ -595,11 +593,13 @@ public class graphicalInterface extends JFrame{
 	    String s = null;
 	    while ((s = reader.readLine()) != null) {
 	           numberOfProcessors = Integer.valueOf(s);
+	           if(numberOfProcessors == 1)
+	        	   numberOfProcessors = 2;
 	           outputInfo.append("\nThere are " + s + " processors available in this machine.\n");
 	    }
 	    is.close();
 		 
-		String alignmentCommand = "bowtie2 -p " + Integer.toString(numberOfProcessors - 1) + " ";
+		String alignmentCommand = "nice bowtie2 -t -p " + Integer.toString(numberOfProcessors - 1) + " ";
 		boolean isAlignmentDefault = alignmentSettingsDefault.isSelected();
 			if(!isAlignmentDefault){
 				boolean isAlignmentPreset = alignmentSettingsPresets.isSelected();
@@ -621,27 +621,56 @@ public class graphicalInterface extends JFrame{
 					}
 				}
 				else {
-					alignmentCommand = alignmentCommand + alignmentParameters.getText();
+					alignmentCommand = alignmentCommand + alignmentParameters.getText() + " ";
 				}
 			}
 			else {
-				alignmentCommand = alignmentCommand + "--local --very-sensitive";
+				alignmentCommand = alignmentCommand + "--local --very-sensitive ";
 			}
-			 	
 		
-		outputInfo.append(alignmentCommand);
-		/*
-		java.lang.Runtime rt = java.lang.Runtime.getRuntime();
-	    java.lang.Process p = rt.exec("cat " + controlFile);
-	    p.waitFor();
-	    java.io.InputStream is = p.getInputStream();
-	    java.io.BufferedReader reader = new java.io.BufferedReader(new InputStreamReader(is));
-	    String s = null;
-	    while ((s = reader.readLine()) != null) {
-	           outputInfo.append("\n"+s);
+		alignmentCommand = alignmentCommand + "-x /data/bowtie-indexes/hg19 -U ";
+		String treatmentAlignmentCommand = alignmentCommand
+				+ treatmentFile + " -S " + outputLocation + "/" + callName.getText() + "_treatment.sam";
+		String controlAlignmentCommand = alignmentCommand
+				+ controlFile + " -S " + outputLocation + "/" + callName.getText() +"_control.sam";
+		outputInfo.append("Treatment alignment command: \n" + treatmentAlignmentCommand + "\n");
+		outputInfo.append("Control alignment command: \n" + controlAlignmentCommand + "\n");
+		
+		
+		
+		File tempScript = File.createTempFile("script", null);
+
+	    Writer streamWriter = new OutputStreamWriter(new FileOutputStream(tempScript));
+	    PrintWriter printWriter = new PrintWriter(streamWriter);
+
+	    printWriter.println("#!/bin/bash");
+	    printWriter.println(treatmentAlignmentCommand);
+
+
+	    printWriter.close();
+		
+	    Process process = null;
+	    
+	    try {
+            ProcessBuilder pb = new ProcessBuilder("bash", tempScript.toString());
+            pb.inheritIO();
+            process = pb.start();
+            process.waitFor();
+	     } finally {
+            tempScript.delete();
+	     }
+		
+	    BufferedReader reader2 = new BufferedReader(new InputStreamReader(process.getInputStream()));
+	    StringBuilder builder = new StringBuilder();
+	    String line = null;
+	    while ( (line = reader2.readLine()) != null) {
+	    	 builder.append(line);
+	    	 builder.append(System.getProperty("line.separator"));
 	    }
-	    is.close();
-		*/
+	    String result = builder.toString();
+	
+	    outputInfo.append(result);
+	    
 		cp.add(content);
 	
     	Frame2 = new JFrame();
@@ -651,7 +680,38 @@ public class graphicalInterface extends JFrame{
 		Frame2.setVisible(true);
     	
     }
-   
+    public void executeCommands(String command) throws IOException {
+
+        File tempScript = createTempScript(command);
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder("bash", tempScript.toString());
+            pb.inheritIO();
+            Process process = pb.start();
+            process.waitFor();
+        } catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} finally {
+            tempScript.delete();
+        }
+    }
+
+    public File createTempScript(String command) throws IOException {
+        File tempScript = File.createTempFile("script", null);
+
+        Writer streamWriter = new OutputStreamWriter(new FileOutputStream(
+                tempScript));
+        PrintWriter printWriter = new PrintWriter(streamWriter);
+
+        printWriter.println("#!/bin/bash");
+        printWriter.println(command);
+
+
+        printWriter.close();
+
+        return tempScript;
+    }
     
 public static void main(String[] args) {
 		JOptionPane.showMessageDialog(Frame,"Welcome to Read Alignment Peak and Super Enhancer Calling!","RAPaSEC",JOptionPane.INFORMATION_MESSAGE);
