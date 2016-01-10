@@ -73,12 +73,7 @@ public class graphicalInterface extends JFrame{
 	public static JTextField StitchDistance;
 	public static JLabel TSSLabel;
 	public static JTextField TSS;
-	
-	//OutputInfo
-	public static JLabel outputLabel;
-	public static JTextArea outputInfo;
-	
-	
+
 	
 	public graphicalInterface(){
 		Frame = new JFrame("RAPaSEC");
@@ -561,30 +556,67 @@ public class graphicalInterface extends JFrame{
     }
 	
     public static void runCommand() throws java.io.IOException, InterruptedException{
-    	cp = new JPanel();
-    	outputLabel = new JLabel("Output");
-    	outputLabel.setSize(new Dimension(outputLabel.getWidth()+5,outputLabel.getHeight()+5));
-    	outputInfo = new JTextArea(100,40);
-    	outputInfo.setEditable(false);
-    	outputInfo.setText(TreatmentFileName.getText()+"\n"+ControlFileName.getText()+"\n" + outputDirectory.getText() + "\n" + callName.getText());
+    	String treatmentAlignmentCommand = prepareAlignmentCommand(true);
+    	String controlAlignmentCommand = prepareAlignmentCommand(false);
+    	boolean filterTheReads = filterReads.isSelected();
+    	String convertSamToBamTreatmentCommmand = 
+    			"samtools view -bS " + outputLocation + "/" + callName.getText() + "_treatment.sam > " 
+						+ outputLocation + "/" + callName.getText() + "_treatment.bam";
+        String convertSamToBamControlCommand = 
+				"samtools view -bS " + outputLocation + "/" + callName.getText() + "_control.sam > " 
+						+ outputLocation + "/" + callName.getText() + "_control.bam";
+    	if (filterTheReads){
+    		String filterNonUniqueAlignmentsTreatmentCommand = 
+    				"nice sed '/XS:/d' " + outputLocation + "/" + callName.getText() + "_treatment.sam > " 
+    						+ outputLocation + "/" + callName.getText() + "_treatment_uniqueOnly.sam";
+    		String filterNonUniqueAlignmentsControlCommand = 
+    				"nice sed '/XS:/d' " + outputLocation + "/" + callName.getText() + "_control.sam > " 
+    						+ outputLocation + "/" + callName.getText() + "_control_uniqueOnly.sam";
+    		convertSamToBamTreatmentCommmand = 
+    				"samtools view -bS " + outputLocation + "/" + callName.getText() + "_treatment_uniqueOnly.sam > " 
+    						+ outputLocation + "/" + callName.getText() + "_treatment.bam";
+    		convertSamToBamControlCommand = 
+    				"samtools view -bS " + outputLocation + "/" + callName.getText() + "_control_uniqueOnly.sam > " 
+    						+ outputLocation + "/" + callName.getText() + "_control.bam";
+    	}
     	
-    	cp.add(outputInfo);
-    	content = new JPanel();
-    	GroupLayout outputLayout = new GroupLayout(content);
-		content.setLayout(outputLayout);
-		outputLayout.setAutoCreateGaps(true);
-		outputLayout.setAutoCreateContainerGaps(true);
-    	
-		outputLayout.setHorizontalGroup(outputLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
-				.addComponent(outputLabel)
-				.addComponent(outputInfo)
-		);
+    	String peakCallCommand = preparePeakCallCommand();
+    	String roseCommand = "python ROSE_main.py "
 		
-		outputLayout.setVerticalGroup(outputLayout.createSequentialGroup()
-				.addComponent(outputLabel)
-				.addComponent(outputInfo)
-		);
-		int numberOfProcessors = 0;
+		System.out.println("Treatment Alignment command:\n" + treatmentAlignmentCommand);
+		System.out.println("Control Alignment command:\n" + controlAlignmentCommand);
+    	
+    }
+    
+    public static String preparePeakCallCommand() {
+    	boolean isDefaultPeak = peakCallingSettingsDefault.isSelected();
+    	String peakCallCommand = "nice macs14 " 
+    			+ "-t " + outputLocation + "/" + callName.getText() + "_treatment.bam " 
+    			+ "-c " + outputLocation + "/" + callName.getText() + "_control.bam ";
+    			
+;
+    	if (isDefaultPeak){
+    		peakCallCommand = peakCallCommand + "-p 1e-5 --nomodel --shiftsize=90 --keep-dup=auto -w -S --space=50 "; 
+    	}
+    	else {
+    		peakCallCommand = peakCallCommand + "-p " + pValue.getText() + " ";
+    		if (noModel.isSelected()) 
+    			peakCallCommand = peakCallCommand + "--nomodel --shiftsize = " + shiftSize.getText() + " ";
+    		if (keepDupAuto.isSelected())
+    			peakCallCommand = peakCallCommand + "--keep-dup=auto ";
+    		if (keepDupAll.isSelected())
+    			peakCallCommand = peakCallCommand + "--keep-dup=all ";
+    		if (keepDupNum.isSelected())
+    			peakCallCommand = peakCallCommand + "--keep-dup=" + keepDupNumDuplicates.getText() + " ";
+    		peakCallCommand = peakCallCommand + "-w -S --space=" + space.getText() + " ";
+    	}
+    	peakCallCommand = peakCallCommand + "-g hs -n " + callName.getText();
+    	return peakCallCommand;
+    }
+    
+    public static String prepareAlignmentCommand(boolean isTreatment) throws java.io.IOException, InterruptedException {
+    	
+    	int numberOfProcessors = 0;
 		java.lang.Runtime rt = java.lang.Runtime.getRuntime();
 	    java.lang.Process p = rt.exec("nproc");
 	    p.waitFor();
@@ -595,7 +627,7 @@ public class graphicalInterface extends JFrame{
 	           numberOfProcessors = Integer.valueOf(s);
 	           if(numberOfProcessors == 1)
 	        	   numberOfProcessors = 2;
-	           outputInfo.append("\nThere are " + s + " processors available in this machine.\n");
+	           System.out.println("\nThere are " + s + " processors available in this machine.\n");
 	    }
 	    is.close();
 		 
@@ -629,88 +661,16 @@ public class graphicalInterface extends JFrame{
 			}
 		
 		alignmentCommand = alignmentCommand + "-x /data/bowtie-indexes/hg19 -U ";
-		String treatmentAlignmentCommand = alignmentCommand
-				+ treatmentFile + " -S " + outputLocation + "/" + callName.getText() + "_treatment.sam";
-		String controlAlignmentCommand = alignmentCommand
+		if (isTreatment) {
+			String treatmentAlignmentCommand = alignmentCommand
+					+ treatmentFile + " -S " + outputLocation + "/" + callName.getText() + "_treatment.sam";
+			return treatmentAlignmentCommand;
+		}
+		else {
+			String controlAlignmentCommand = alignmentCommand
 				+ controlFile + " -S " + outputLocation + "/" + callName.getText() +"_control.sam";
-		outputInfo.append("Treatment alignment command: \n" + treatmentAlignmentCommand + "\n");
-		outputInfo.append("Control alignment command: \n" + controlAlignmentCommand + "\n");
-		
-		
-		
-		File tempScript = File.createTempFile("script", null);
-
-	    Writer streamWriter = new OutputStreamWriter(new FileOutputStream(tempScript));
-	    PrintWriter printWriter = new PrintWriter(streamWriter);
-
-	    printWriter.println("#!/bin/bash");
-	    printWriter.println(treatmentAlignmentCommand);
-
-
-	    printWriter.close();
-		
-	    Process process = null;
-	    
-	    try {
-            ProcessBuilder pb = new ProcessBuilder("bash", tempScript.toString());
-            pb.inheritIO();
-            process = pb.start();
-            process.waitFor();
-	     } finally {
-            tempScript.delete();
-	     }
-		
-	    BufferedReader reader2 = new BufferedReader(new InputStreamReader(process.getInputStream()));
-	    StringBuilder builder = new StringBuilder();
-	    String line = null;
-	    while ( (line = reader2.readLine()) != null) {
-	    	 builder.append(line);
-	    	 builder.append(System.getProperty("line.separator"));
-	    }
-	    String result = builder.toString();
-	
-	    outputInfo.append(result);
-	    
-		cp.add(content);
-	
-    	Frame2 = new JFrame();
-    	Frame2.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-    	Frame2.add(cp);
-		Frame2.pack();
-		Frame2.setVisible(true);
-    	
-    }
-    public void executeCommands(String command) throws IOException {
-
-        File tempScript = createTempScript(command);
-
-        try {
-            ProcessBuilder pb = new ProcessBuilder("bash", tempScript.toString());
-            pb.inheritIO();
-            Process process = pb.start();
-            process.waitFor();
-        } catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} finally {
-            tempScript.delete();
-        }
-    }
-
-    public File createTempScript(String command) throws IOException {
-        File tempScript = File.createTempFile("script", null);
-
-        Writer streamWriter = new OutputStreamWriter(new FileOutputStream(
-                tempScript));
-        PrintWriter printWriter = new PrintWriter(streamWriter);
-
-        printWriter.println("#!/bin/bash");
-        printWriter.println(command);
-
-
-        printWriter.close();
-
-        return tempScript;
+			return controlAlignmentCommand;
+		}
     }
     
 public static void main(String[] args) {
